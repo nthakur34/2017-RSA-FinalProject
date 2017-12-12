@@ -55,18 +55,25 @@ unsigned long toneStart = 0;
 int input1 = 7;
 int input2 = 8;
 int enable1 = 6;
-int targetFreq = 440;
+volatile int targetFreq = 0;
 //only update current frequency if above this threshold
 int listening_thresh = 20000;
-//if doing button method
 //const int LED_LISTENING = ?
 //const int LED_PUSH = ?
 //const int LED_DONE = ?
 //const int BUTTON_LISTEN = ?
-//const int BUTTON_NOTE_A = ?
-//const int BUTTON_NOTE_B = ?
-//const int BUTTON_NOTE_C = ?
+const int BUTTON_NOTE_A = 2;
+const int BUTTON_NOTE_B = 3;
+const int BUTTON_NOTE_C = 4;
 //const int BOTTON_STOP = ?
+
+//note states
+
+volatile byte noteA = LOW;
+volatile byte noteB = LOW;
+volatile byte noteC = LOW;
+volatile byte stopped = HIGH; //initially no note selected
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // MAIN SKETCH FUNCTIONS
@@ -93,6 +100,10 @@ void setup() {
   digitalWrite(input2, LOW);
   digitalWrite(enable1, LOW);
 
+  attachInterrupt(digitalPinToInterrupt(2), changeA, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(3), changeB, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(4), changeC, CHANGE);
+  
   // Initialize neo pixel library and turn off the LEDs
   pixels.begin();
   pixels.show();
@@ -105,6 +116,10 @@ void setup() {
 }
 
 void loop() {
+
+  while (stopped) {
+  //do nothing
+  }
   // Calculate FFT if a full sample is available.
   if (samplingIsDone()) {
     // Run FFT on sample data.
@@ -116,7 +131,9 @@ void loop() {
 
     // Detect tone sequence.
     //toneLoop();
-    testThresh();
+
+    //tune to the note
+    tuner();
 
     // Restart audio sampling.
     samplingBegin();
@@ -126,53 +143,62 @@ void loop() {
   parserLoop();
 }
 
-void testThresh() {
+//turn the motor to tune the string instrument
+void tuner() {
 
-  windowMeanNew(magnitudes);
+  maxFrequency(magnitudes);
   if (maxVal > listening_thresh) {
 //    Serial.print("Max Val: ");
 //    Serial.println(maxVal);
 //    Serial.print("Freq: ");
 //    Serial.println(maxFreq);
-    if (maxFreq < targetFreq - 13) {
+    Serial.println(maxFreq);
+    Serial.println(maxVal);
+    if (maxFreq < targetFreq - 5) { //change 5 to variable that changes based on interuppts
       moveMotorClockwise();
       Serial.println("CLOCKWISE");
     }
-    else if (maxFreq > targetFreq + 13) {
+    else if (maxFreq > targetFreq + 5) {
       moveMotorCounterClockwise();
       Serial.println("COUNTERCLOCKWISE");
-      Serial.println(maxFreq);
-      Serial.println(maxVal);
     }
     else {
-      Serial.println(maxFreq);
+      Serial.println("SAME");
       analogWrite(enable1, 0);
     }
     //analogWrite(enable1, 0);
   }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// MOVE THE MOTOR
+////////////////////////////////////////////////////////////////////////////////
+
 void moveMotorClockwise() {
   digitalWrite(input1, HIGH);
   digitalWrite(input2, LOW);
-  analogWrite(enable1, 120);
-  delay(1000);
+  analogWrite(enable1, 255);
+  delay(100);
   analogWrite(enable1, 0);  
   
 }
 void moveMotorCounterClockwise() {
   digitalWrite(input1, LOW);
   digitalWrite(input2, HIGH);
-  analogWrite(enable1, 120);
-  delay(1000);
+  analogWrite(enable1, 255);
+  delay(100);
   analogWrite(enable1, 0);  
 }
 
-// Compute the average magnitude of a target frequency window vs. all other frequencies.
-void windowMeanNew(float* magnitudes) {
+////////////////////////////////////////////////////////////////////////////////
+// UTILITY FUNCTIONS
+////////////////////////////////////////////////////////////////////////////////
+
+/// Find the bin with max magnitude and its corresponding frequency
+void maxFrequency(float* magnitudes) {
   maxVal = 0;
   maxFreq = 0;
-  int bin_size = 4
+  int bin_size = 4;
   // Notice the first magnitude bin is skipped because it represents the
   // average power of the signal.
   for (int i = 1; i < FFT_SIZE / 2; ++i) {
@@ -184,6 +210,32 @@ void windowMeanNew(float* magnitudes) {
     }
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// INTERRUPTS
+////////////////////////////////////////////////////////////////////////////////
+
+//Set new target frequency to note A
+void changeA() {
+    noteA = !noteA;
+    stopped = LOW;
+    targetFreq = 440;
+}
+
+//Set new target frequency to note B
+void changeB() {
+    noteB = !noteB;
+    stopped = LOW;
+    targetFreq = 494;
+}
+
+//Set new target frequency to note C
+void changeC() {
+    noteB = !noteB;
+    stopped = LOW;
+    targetFreq = 523;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // UTILITY FUNCTIONS
 ////////////////////////////////////////////////////////////////////////////////
@@ -358,3 +410,4 @@ void parseCommand(char* command) {
   GET_AND_SET(TONE_WINDOW_MS)
   GET_AND_SET(TONE_THRESHOLD_DB)
 }
+
