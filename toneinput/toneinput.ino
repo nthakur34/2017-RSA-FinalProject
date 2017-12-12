@@ -51,11 +51,22 @@ char commandBuffer[MAX_CHARS];
 int tonePosition = 0;
 unsigned long toneStart = 0;
 
+//Motor pins
 int input1 = 7;
 int input2 = 8;
 int enable1 = 6;
-//on;y update current frequency if above this threshold
-int listening_thresh = 20;
+int targetFreq = 440;
+//only update current frequency if above this threshold
+int listening_thresh = 20000;
+//if doing button method
+//const int LED_LISTENING = ?
+//const int LED_PUSH = ?
+//const int LED_DONE = ?
+//const int BUTTON_LISTEN = ?
+//const int BUTTON_NOTE_A = ?
+//const int BUTTON_NOTE_B = ?
+//const int BUTTON_NOTE_C = ?
+//const int BOTTON_STOP = ?
 
 ////////////////////////////////////////////////////////////////////////////////
 // MAIN SKETCH FUNCTIONS
@@ -104,7 +115,8 @@ void loop() {
     arm_cmplx_mag_f32(samples, magnitudes, FFT_SIZE);
 
     // Detect tone sequence.
-    toneLoop();
+    //toneLoop();
+    testThresh();
 
     // Restart audio sampling.
     samplingBegin();
@@ -114,7 +126,64 @@ void loop() {
   parserLoop();
 }
 
+void testThresh() {
 
+  windowMeanNew(magnitudes);
+  if (maxVal > listening_thresh) {
+//    Serial.print("Max Val: ");
+//    Serial.println(maxVal);
+//    Serial.print("Freq: ");
+//    Serial.println(maxFreq);
+    if (maxFreq < targetFreq - 13) {
+      moveMotorClockwise();
+      Serial.println("CLOCKWISE");
+    }
+    else if (maxFreq > targetFreq + 13) {
+      moveMotorCounterClockwise();
+      Serial.println("COUNTERCLOCKWISE");
+      Serial.println(maxFreq);
+      Serial.println(maxVal);
+    }
+    else {
+      Serial.println(maxFreq);
+      analogWrite(enable1, 0);
+    }
+    //analogWrite(enable1, 0);
+  }
+}
+
+void moveMotorClockwise() {
+  digitalWrite(input1, HIGH);
+  digitalWrite(input2, LOW);
+  analogWrite(enable1, 120);
+  delay(1000);
+  analogWrite(enable1, 0);  
+  
+}
+void moveMotorCounterClockwise() {
+  digitalWrite(input1, LOW);
+  digitalWrite(input2, HIGH);
+  analogWrite(enable1, 120);
+  delay(1000);
+  analogWrite(enable1, 0);  
+}
+
+// Compute the average magnitude of a target frequency window vs. all other frequencies.
+void windowMeanNew(float* magnitudes) {
+  maxVal = 0;
+  maxFreq = 0;
+  int bin_size = 4
+  // Notice the first magnitude bin is skipped because it represents the
+  // average power of the signal.
+  for (int i = 1; i < FFT_SIZE / 2; ++i) {
+    
+    //get current frequency played
+    if (magnitudes[i] > maxVal) {
+      maxVal = magnitudes[i]; //change 4
+      maxFreq = i * bin_size;
+    }
+  }
+}
 ////////////////////////////////////////////////////////////////////////////////
 // UTILITY FUNCTIONS
 ////////////////////////////////////////////////////////////////////////////////
@@ -123,8 +192,6 @@ void loop() {
 void windowMean(float* magnitudes, int lowBin, int highBin, float* windowMean, float* otherMean) {
   *windowMean = 0;
   *otherMean = 0;
-  maxVal = 0;
-  maxFreq = 0;
   // Notice the first magnitude bin is skipped because it represents the
   // average power of the signal.
   for (int i = 1; i < FFT_SIZE / 2; ++i) {
@@ -133,11 +200,6 @@ void windowMean(float* magnitudes, int lowBin, int highBin, float* windowMean, f
     }
     else {
       *otherMean += magnitudes[i];
-    }
-    //get current frequency played
-    if (magnitudes[i] > maxVal) {
-      maxVal = magnitudes[i]; //change 4
-      maxFreq = i * 4;
     }
   }
   *windowMean /= (highBin - lowBin) + 1;
@@ -167,11 +229,10 @@ void toneLoop() {
   // Get the average intensity of frequencies inside and outside the tone window.
   float window, other;
   windowMean(magnitudes, lowBin, highBin, &window, &other);
-  Serial.println(maxFreq);
   window = intensityDb(window);
   other = intensityDb(other);
   // Check if tone intensity is above the threshold to detect a step in the sequence.
-  if ((window - other) >= TONE_THRESHOLD_DB)g {
+  if ((window - other) >= TONE_THRESHOLD_DB) {
     // Start timing the window if this is the first in the sequence.
     unsigned long time = millis();
     if (tonePosition == 0) {
