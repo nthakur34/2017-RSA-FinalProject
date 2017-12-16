@@ -13,7 +13,7 @@
 // These values can be changed to alter the behavior of the spectrum display.
 ////////////////////////////////////////////////////////////////////////////////
 
-int SAMPLE_RATE_HZ = 1000;             // Sample rate of the audio in hertz.
+int SAMPLE_RATE_HZ = 2000;             // Sample rate of the audio in hertz.
 const int TONE_LOWS[] = {              // Lower bound (in hz) of each tone in the input sequence.
   439
 };
@@ -51,22 +51,27 @@ char commandBuffer[MAX_CHARS];
 int tonePosition = 0;
 unsigned long toneStart = 0;
 
+//motor states
+volatile int currentIncrement = 0;
+volatile byte stateA = LOW;
+volatile byte stateB = LOW;
+
 //Motor pins
+int encoderA = 11;
+int encoderB = 12;
 int input1 = 7;
 int input2 = 8;
 int enable1 = 6;
-int targetFreq = 440;
+int targetFreq = 495;
 //only update current frequency if above this threshold
-int listening_thresh = 20000;
-//if doing button method
-//const int LED_LISTENING = ?
-//const int LED_PUSH = ?
-//const int LED_DONE = ?
-//const int BUTTON_LISTEN = ?
-//const int BUTTON_NOTE_A = ?
-//const int BUTTON_NOTE_B = ?
-//const int BUTTON_NOTE_C = ?
-//const int BOTTON_STOP = ?
+int listening_thresh = 5000;
+const int BUTTON_NOTE_A = 22;
+const int BUTTON_NOTE_B = 23;
+
+//checks when last bounce was at button push
+volatile unsigned long lastBounce = 0;
+//how long after button push to check for bounces
+unsigned long debounce = 500;
 
 ////////////////////////////////////////////////////////////////////////////////
 // MAIN SKETCH FUNCTIONS
@@ -86,12 +91,26 @@ void setup() {
   digitalWrite(POWER_LED_PIN, HIGH);
 
   // Motor stuff
+  pinMode(encoderA,INPUT);//encoder A
+  pinMode(encoderB,INPUT);//encoder B
   pinMode(input1, OUTPUT);//input 1
   pinMode(input2, OUTPUT);//input 2
   pinMode(enable1, OUTPUT);//enable 1
   digitalWrite(input1, LOW);
   digitalWrite(input2, LOW);
   digitalWrite(enable1, LOW);
+
+  stateA = digitalRead(encoderA);
+  stateB = digitalRead(encoderB);
+
+  // Button Pins
+  pinMode(BUTTON_NOTE_A, INPUT_PULLUP);
+  pinMode(BUTTON_NOTE_B, INPUT_PULLUP);
+
+  attachInterrupt(digitalPinToInterrupt(BUTTON_NOTE_A), switchToA, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(BUTTON_NOTE_B), switchToB, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(encoderA), changeA, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(encoderB), changeB, CHANGE);
 
   // Initialize neo pixel library and turn off the LEDs
   pixels.begin();
@@ -128,51 +147,57 @@ void loop() {
 
 void testThresh() {
 
-  windowMeanNew(magnitudes);
-  if (maxVal > listening_thresh) {
-//    Serial.print("Max Val: ");
-//    Serial.println(maxVal);
-//    Serial.print("Freq: ");
-//    Serial.println(maxFreq);
+  int kprop = 2;
+  
+  getMaxFreq(magnitudes);
+  if (maxVal > listening_thresh && maxFreq < 700 && maxFreq > 200) {
+    
+    Serial.print("Max Val: ");
+    Serial.println(maxVal);
+    Serial.print("Freq: ");
+    Serial.println(maxFreq);
+    
     if (maxFreq < targetFreq - 13) {
-      moveMotorClockwise();
-      Serial.println("CLOCKWISE");
+      moveMotorClockwise(kprop*(targetFreq - maxFreq));
+      //Serial.println("CLOCKWISE");
     }
     else if (maxFreq > targetFreq + 13) {
-      moveMotorCounterClockwise();
-      Serial.println("COUNTERCLOCKWISE");
-      Serial.println(maxFreq);
-      Serial.println(maxVal);
+      moveMotorCounterClockwise(kprop*(maxFreq - targetFreq));
+      //Serial.println("COUNTERCLOCKWISE");
     }
     else {
-      Serial.println(maxFreq);
+      Serial.println("SAME");
       analogWrite(enable1, 0);
     }
     //analogWrite(enable1, 0);
   }
 }
 
-void moveMotorClockwise() {
+void moveMotorClockwise(int error) {
   digitalWrite(input1, HIGH);
   digitalWrite(input2, LOW);
-  analogWrite(enable1, 120);
-  delay(1000);
-  analogWrite(enable1, 0);  
+  digitalWrite(enable1, HIGH);
+  int temp = currentIncrement;
+  while (abs(currentIncrement - temp) < error) {
+  }
+  digitalWrite(enable1, LOW);  
   
 }
-void moveMotorCounterClockwise() {
+void moveMotorCounterClockwise(int error) {
   digitalWrite(input1, LOW);
   digitalWrite(input2, HIGH);
-  analogWrite(enable1, 120);
-  delay(1000);
-  analogWrite(enable1, 0);  
+  digitalWrite(enable1, HIGH);
+  int temp = currentIncrement;
+  while (abs(currentIncrement - temp) < error) {
+  }
+  digitalWrite(enable1, LOW);  
 }
 
 // Compute the average magnitude of a target frequency window vs. all other frequencies.
-void windowMeanNew(float* magnitudes) {
+void getMaxFreq(float* magnitudes) {
   maxVal = 0;
   maxFreq = 0;
-  int bin_size = 4
+  int bin_size = 8;
   // Notice the first magnitude bin is skipped because it represents the
   // average power of the signal.
   for (int i = 1; i < FFT_SIZE / 2; ++i) {
@@ -180,10 +205,59 @@ void windowMeanNew(float* magnitudes) {
     //get current frequency played
     if (magnitudes[i] > maxVal) {
       maxVal = magnitudes[i]; //change 4
-      maxFreq = i * bin_size;
+      maxFreq = (i * bin_size);
     }
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// INTERRUPTS
+////////////////////////////////////////////////////////////////////////////////
+
+//change counter according to change in output A
+void changeA() {
+    stateA = !stateA;
+    //if A and B are different, add one to the counter - if they are the same, subtract one from the counter
+    if (stateA != stateB) {
+      currentIncrement += 1;
+    }
+    else {
+      currentIncrement -= 1;
+    }
+}
+//change counter according to change in output B
+void changeB() {
+    stateB = !stateB;
+    //if A and B are the same, add one to the counter - if they are different, subtract one from the counter
+    if (stateA == stateB) {
+      currentIncrement += 1;
+    }
+    else {
+      currentIncrement -= 1;
+    }
+}
+
+
+//swtiches target frequency to note A
+void switchToA() {
+  //checks to see if 500ms has passed since last bounce
+  if (millis() - lastBounce > debounce) {
+    targetFreq = 440;
+    Serial.println(targetFreq);
+  }
+  lastBounce = millis(); //set new lastBounce
+}
+
+//swtiches target frequency to note B
+void switchToB() {
+  //checks to see if 500ms has passed since last bounce
+  if (millis() - lastBounce > debounce) {
+    targetFreq = 550;
+    Serial.println(targetFreq);
+  }
+  lastBounce = millis(); //set new lastBounce
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // UTILITY FUNCTIONS
 ////////////////////////////////////////////////////////////////////////////////
