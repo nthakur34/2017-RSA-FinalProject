@@ -62,7 +62,7 @@ int encoderB = 12;
 int input1 = 7;
 int input2 = 8;
 int enable1 = 6;
-int targetFreq = 495;
+int targetFreq = 440;
 //only update current frequency if above this threshold
 int listening_thresh = 5000;
 const int BUTTON_NOTE_A = 22;
