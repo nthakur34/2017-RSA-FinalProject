@@ -51,13 +51,22 @@ char commandBuffer[MAX_CHARS];
 int tonePosition = 0;
 unsigned long toneStart = 0;
 
+//motor states
+volatile int currentIncrement = 0;
+volatile byte stateA = LOW;
+volatile byte stateB = LOW;
+
+
 //Motor pins
 int input1 = 7;
 int input2 = 8;
 int enable1 = 6;
-volatile int targetFreq = 0;
+//Frequencies
+//int possibleFreqs[3];
+//possibleFreqs = [176, 196, 224]
+volatile int targetFreq = 452;
 //only update current frequency if above this threshold
-int listening_thresh = 20000;
+int listening_thresh = 4000;
 //const int LED_LISTENING = ?
 //const int LED_PUSH = ?
 //const int LED_DONE = ?
@@ -93,6 +102,8 @@ void setup() {
   digitalWrite(POWER_LED_PIN, HIGH);
 
   // Motor stuff
+  pinMode(11,INPUT);//encoder A
+  pinMode(12,INPUT);//encoder B
   pinMode(input1, OUTPUT);//input 1
   pinMode(input2, OUTPUT);//input 2
   pinMode(enable1, OUTPUT);//enable 1
@@ -100,9 +111,11 @@ void setup() {
   digitalWrite(input2, LOW);
   digitalWrite(enable1, LOW);
 
-  attachInterrupt(digitalPinToInterrupt(2), changeA, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(3), changeB, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(4), changeC, CHANGE);
+  stateA = digitalRead(11);
+  stateB = digitalRead(12);
+
+  attachInterrupt(digitalPinToInterrupt(11), changeA, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(12), changeB, CHANGE);
   
   // Initialize neo pixel library and turn off the LEDs
   pixels.begin();
@@ -117,10 +130,11 @@ void setup() {
 
 void loop() {
 
-  while (stopped) {
+  //while (stopped) {
   //do nothing
-  }
+  //}
   // Calculate FFT if a full sample is available.
+  /*
   if (samplingIsDone()) {
     // Run FFT on sample data.
     arm_cfft_radix4_instance_f32 fft_inst;
@@ -133,7 +147,7 @@ void loop() {
     //toneLoop();
 
     //tune to the note
-    tuner();
+    //tuner();
 
     // Restart audio sampling.
     samplingBegin();
@@ -141,6 +155,39 @@ void loop() {
 
   // Parse any pending commands.
   parserLoop();
+  */
+  //moveMotorCounterClockwise();
+  Serial.println(currentIncrement);
+  moveMotorCounterClockwise(100);
+  delay(1000);
+  moveMotorClockwise(100);
+  delay(1000);
+  Serial.println(currentIncrement);
+  
+}
+
+
+//change counter according to change in output A
+void changeA() {
+    stateA = !stateA;
+    //if A and B are different, add one to the counter - if they are the same, subtract one from the counter
+    if (stateA != stateB) {
+      currentIncrement += 1;
+    }
+    else {
+      currentIncrement -= 1;
+    }
+}
+//change counter according to change in output B
+void changeB() {
+    stateB = !stateB;
+    //if A and B are the same, add one to the counter - if they are different, subtract one from the counter
+    if (stateA == stateB) {
+      currentIncrement += 1;
+    }
+    else {
+      currentIncrement -= 1;
+    }
 }
 
 //turn the motor to tune the string instrument
@@ -148,22 +195,22 @@ void tuner() {
 
   maxFrequency(magnitudes);
   if (maxVal > listening_thresh) {
-//    Serial.print("Max Val: ");
-//    Serial.println(maxVal);
-//    Serial.print("Freq: ");
-//    Serial.println(maxFreq);
-    Serial.println(maxFreq);
+    Serial.print("Max Val: ");
     Serial.println(maxVal);
+    Serial.print("Freq: ");
+    Serial.println(maxFreq);
+
     if (maxFreq < targetFreq - 5) { //change 5 to variable that changes based on interuppts
-      moveMotorClockwise();
-      Serial.println("CLOCKWISE");
+      //moveMotorCounterClockwise();
+      //Serial.println("CLOCKWISE");
     }
     else if (maxFreq > targetFreq + 5) {
-      moveMotorCounterClockwise();
-      Serial.println("COUNTERCLOCKWISE");
+      //moveMotorCounterClockwise();
+      //moveMotorClockwise();
+      //Serial.println("COUNTERCLOCKWISE");
     }
     else {
-      Serial.println("SAME");
+      //Serial.println("SAME");
       analogWrite(enable1, 0);
     }
     //analogWrite(enable1, 0);
@@ -174,19 +221,23 @@ void tuner() {
 // MOVE THE MOTOR
 ////////////////////////////////////////////////////////////////////////////////
 
-void moveMotorClockwise() {
+void moveMotorClockwise(int clicks) {
   digitalWrite(input1, HIGH);
   digitalWrite(input2, LOW);
-  analogWrite(enable1, 255);
-  delay(100);
+  digitalWrite(enable1, HIGH);
+  int temp = currentIncrement;
+  while (currentIncrement - temp < clicks) {
+  }
   analogWrite(enable1, 0);  
   
 }
-void moveMotorCounterClockwise() {
+void moveMotorCounterClockwise(int clicks) {
   digitalWrite(input1, LOW);
   digitalWrite(input2, HIGH);
-  analogWrite(enable1, 255);
-  delay(100);
+  digitalWrite(enable1, HIGH);
+  int temp = currentIncrement;
+  while (currentIncrement - temp < clicks) {
+  }
   analogWrite(enable1, 0);  
 }
 
@@ -208,6 +259,7 @@ void maxFrequency(float* magnitudes) {
       maxVal = magnitudes[i]; //change 4
       maxFreq = i * bin_size;
     }
+
   }
 }
 
@@ -216,21 +268,21 @@ void maxFrequency(float* magnitudes) {
 ////////////////////////////////////////////////////////////////////////////////
 
 //Set new target frequency to note A
-void changeA() {
+void changeANew() {
     noteA = !noteA;
     stopped = LOW;
     targetFreq = 440;
 }
 
 //Set new target frequency to note B
-void changeB() {
+void changeBNew() {
     noteB = !noteB;
     stopped = LOW;
     targetFreq = 494;
 }
 
 //Set new target frequency to note C
-void changeC() {
+void changeCNew() {
     noteB = !noteB;
     stopped = LOW;
     targetFreq = 523;
