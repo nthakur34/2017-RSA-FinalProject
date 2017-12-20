@@ -129,7 +129,7 @@ void loop() {
 
 void thresh() {
 
-  int kprop = 2;
+  int kprop = 3;
   
   getMaxFreq(magnitudes); //Get max frequency and max magnitude
 
@@ -159,12 +159,9 @@ void thresh() {
 void moveMotorClockwise(int error) {
   digitalWrite(input1, HIGH);
   digitalWrite(input2, LOW);
-  digitalWrite(enable1, HIGH);
   //make sure the encoder moves enough to account for the error
-  int temp = currentIncrement;
-  while (abs(currentIncrement - temp) < error) {
-  }
-  digitalWrite(enable1, LOW);  
+  int val = constrain(abs(round(error)), 0 ,255);
+  analogWrite(enable1, val)
   
 }
 
@@ -172,12 +169,9 @@ void moveMotorClockwise(int error) {
 void moveMotorCounterClockwise(int error) {
   digitalWrite(input1, LOW);
   digitalWrite(input2, HIGH);
-  digitalWrite(enable1, HIGH);
   //make sure the encoder moves enough to account for the error
-  int temp = currentIncrement;
-  while (abs(currentIncrement - temp) < error) {
-  }
-  digitalWrite(enable1, LOW);  
+  int val = constrain(abs(round(error)), 0 ,255);
+  analogWrite(enable1, val)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
